@@ -4377,6 +4377,7 @@ pub const usage_build =
     \\  --global-cache-dir [path]     Override path to global Zig cache directory
     \\  --zig-lib-dir [arg]           Override path to Zig lib directory
     \\  --build-runner [file]         Override path to build runner
+    \\  --build-proxy [proxy str]     Set proxy for zig build
     \\  -h, --help                    Print this help and exit
     \\
 ;
@@ -4394,6 +4395,8 @@ pub fn cmdBuild(gpa: Allocator, arena: Allocator, args: []const []const u8) !voi
         var override_global_cache_dir: ?[]const u8 = try optionalStringEnvVar(arena, "ZIG_GLOBAL_CACHE_DIR");
         var override_local_cache_dir: ?[]const u8 = try optionalStringEnvVar(arena, "ZIG_LOCAL_CACHE_DIR");
         var override_build_runner: ?[]const u8 = try optionalStringEnvVar(arena, "ZIG_BUILD_RUNNER");
+        var zig_build_proxy: ?[]const u8 = try optionalStringEnvVar(arena, "ZIG_BUILD_PROXY");
+
         var child_argv = std.ArrayList([]const u8).init(arena);
         var reference_trace: ?u32 = null;
         var debug_compile_errors = false;
@@ -4442,6 +4445,12 @@ pub fn cmdBuild(gpa: Allocator, arena: Allocator, args: []const []const u8) !voi
                         if (i + 1 >= args.len) fatal("expected argument after '{s}'", .{arg});
                         i += 1;
                         override_global_cache_dir = args[i];
+                        continue;
+                    } else if (mem.eql(u8, arg, "--build-proxy")) {
+                        if (i + 1 >= args.len) fatal("expected argument after '{s}'", .{arg});
+                        i += 1;
+                        zig_build_proxy = args[i];
+                        try child_argv.appendSlice(&[_][]const u8{ arg, args[i] });
                         continue;
                     } else if (mem.eql(u8, arg, "-freference-trace")) {
                         try child_argv.append(arg);
@@ -4592,7 +4601,37 @@ pub fn cmdBuild(gpa: Allocator, arena: Allocator, args: []const []const u8) !voi
             .root_src_path = build_zig_basename,
         };
         if (!build_options.only_core_functionality) {
-            var http_client: std.http.Client = .{ .allocator = gpa };
+            var http_proxy: ?std.http.Client.HttpProxy = null;
+            // proxy string should be like:
+            // socks5://host:port
+            // http://host:port
+            // https://host:port
+            if (zig_build_proxy) |proxy| {
+                var proxy_uri = std.Uri.parse(proxy) catch |err| {
+                    fatal("unable to parse --build-proxy '{s}': {s}", .{ proxy, @errorName(err) });
+                };
+
+                const protocol = std.http.Client.protocol_map.get(proxy_uri.scheme) orelse {
+                    fatal("unable to parse --build-proxy '{s}': {s}", .{ proxy, @errorName(std.http.Client.ConnectError.UnsupportedUrlScheme) });
+                };
+                const port: u16 = proxy_uri.port orelse switch (protocol) {
+                    .plain => 80,
+                    .tls => 443,
+                };
+                const host = proxy_uri.host orelse {
+                    fatal("unable to parse --build-proxy '{s}': {s}", .{ proxy, @errorName(std.http.Client.RequestError.UriMissingHost) });
+                };
+
+                http_proxy = .{
+                    .protocol = protocol,
+                    .host = host,
+                    .port = port,
+                };
+                const stdout = io.getStdOut().writer();
+                try stdout.print("Use proxy {s} for fetching packages\n", .{proxy});
+            }
+
+            var http_client: std.http.Client = .{ .allocator = gpa, .proxy = http_proxy };
             defer http_client.deinit();
 
             // Here we provide an import to the build runner that allows using reflection to find

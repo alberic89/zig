@@ -207,6 +207,11 @@ pub fn main() !void {
                     std.debug.print("Expected argument after {s}\n\n", .{arg});
                     usageAndErr(builder, false, stderr_stream);
                 };
+            } else if (mem.eql(u8, arg, "--build-proxy")) {
+                builder.build_proxy = nextArg(args, &arg_idx) orelse {
+                    std.debug.print("Expected argument after {s}\n\n", .{arg});
+                    usageAndErr(builder, false, stderr_stream);
+                };
             } else if (mem.eql(u8, arg, "--verbose-link")) {
                 builder.verbose_link = true;
             } else if (mem.eql(u8, arg, "--verbose-air")) {
@@ -943,6 +948,7 @@ fn usage(builder: *std.Build, already_ran_build: bool, out_stream: anytype) !voi
     try out_stream.writeAll(
         \\
         \\General Options:
+        \\  --build-proxy [proxy]        Set proxy for fetching packages
         \\  -p, --prefix [path]          Override default install prefix
         \\  --prefix-lib-dir [path]      Override default library directory path
         \\  --prefix-exe-dir [path]      Override default executable directory path

@@ -90,6 +90,7 @@ sysroot: ?[]const u8 = null,
 search_prefixes: ArrayList([]const u8),
 libc_file: ?[]const u8 = null,
 installed_files: ArrayList(InstalledFile),
+build_proxy: ?[]const u8 = null,
 /// Path to the directory containing build.zig.
 build_root: Cache.Directory,
 cache_root: Cache.Directory,
